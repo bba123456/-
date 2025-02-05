@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全格式转换器</title>
+    <style>
+        .container { padding: 15px; max-width: 800px; margin: auto; font-family: Arial; }
+        .input-area { border: 2px dashed #666; padding: 20px; border-radius: 10px; background: #f8f9fa; }
+        #textInput { width: 100%; height: 150px; margin: 10px 0; padding: 10px; border: 1px solid #ddd; }
+        .format-select { margin: 10px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        select, button { padding: 10px 15px; border-radius: 5px; border: 1px solid #4CAF50; }
+        button { background: #4CAF50; color: white; cursor: pointer; }
+        button:hover { opacity: 0.9; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📁 文件格式转换器</h2>
+        <div class="input-area">
+            <div class="format-select">
+                <select id="targetFormat">
+                    <option value="md">Markdown</option>
+                    <option value="docx">Word</option>
+                    <option value="pdf">PDF</option>
+                    <option value="xlsx">Excel</option>
+                    <option value="txt">TXT</option>
+                </select>
+                <input type="file" id="fileInput" multiple>
+                <button onclick="startConvert()">开始转换</button>
+            </div>
+            <textarea id="textInput" placeholder="粘贴文本或拖拽文件到这里"></textarea>
+        </div>
+    </div>
+
+    <!-- 依赖库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js"></script>
+    <script src="https://unpkg.com/mammoth@1.4.8/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@7.1.1/build/index.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
+
+    <script>
+        // 初始化PDF库
+        const { jsPDF } = window.jspdf;
+
+        // 文件读取器
+        async function readFile(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // 核心转换逻辑
+        async function convertContent(content, targetFormat) {
+            switch(targetFormat) {
+                case 'md':
+                    return content; // 示例直接返回，可添加HTML转MD逻辑
+                case 'docx':
+                    const doc = new docx.Document();
+                    doc.addSection({ children: [new docx.Paragraph(content)] });
+                    return docx.Packer.toBlob(doc);
+                case 'pdf':
+                    const pdf = new jsPDF();
+                    pdf.text(content, 10, 10);
+                    return pdf.output('blob');
+                case 'xlsx':
+                    const ws = XLSX.utils.aoa_to_sheet([[content]]);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+                    return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                case 'txt':
+                    return new Blob([content], { type: 'text/plain' });
+            }
+        }
+
+        // 处理Word文件
+        async function processWordFile(file) {
+            const arrayBuffer = await readFile(file);
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            return result.value;
+        }
+
+        // 转换入口
+        async function startConvert() {
+            const targetFormat = document.getElementById('targetFormat').value;
+            const fileInput = document.getElementById('fileInput').files[0];
+            const textInput = document.getElementById('textInput').value;
+            
+            try {
+                let content = textInput;
+                if (fileInput) {
+                    if (fileInput.name.endsWith('.docx')) {
+                        content = await processWordFile(fileInput);
+                    } else {
+                        content = await new Response(fileInput).text();
+                    }
+                }
+
+                const output = await convertContent(content, targetFormat);
+                const fileName = `converted.${targetFormat}`;
+                
+                if (output instanceof Blob) {
+                    const url = URL.createObjectURL(output);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileName;
+                    a.click();
+                } else {
+                    const blob = new Blob([output], { type: 'application/octet-stream' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = fileName;
+                    link.click();
+                }
+            } catch (error) {
+                alert(`转换失败: ${error.message}`);
+            }
+        }
+
+        // 拖拽文件处理
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            document.getElementById('fileInput').files = e.dataTransfer.files;
+        });
+
+        document.addEventListener('dragover', (e) => e.preventDefault());
+    </script>
+</body>
+</html>
